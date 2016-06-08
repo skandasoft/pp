@@ -1,0 +1,55 @@
+{
+  "name": "pp",
+  "main": "./lib/pp",
+  "version": "0.0.0",
+  "description": "PP-PreviewPlus~framework for all previews",
+  "repository": "https://github.com/skandasoft/pp",
+  "license": "MIT",
+  "engines": {
+    "atom": ">=1.0.0 <2.0.0"
+  },
+  "dependencies": {
+    "coffee-script": ">=1.8.0",
+    "jquery": ">=2.1.3",
+    "tmp": ">=0.0.24",
+    "lodash": ">=3.10.1",
+    "theorist": ">=1.0.2",
+    "atom-space-pen-views": ">=2.0.3",
+    "node-uuid": ">=1.4.7"
+  },
+  "providedServices":{
+    "pp":{
+      "description": "Add Your Preview",
+      "versions":{
+        "1.0.0": "provideAddPreview"
+      }
+    }
+  },
+  "consumedServices": {
+    "status-bar": {
+      "versions": {
+        ">=0.0.0": "consumeStatusBar"
+      }
+    },
+    "browser-plus": {
+      "versions": {
+        ">=0.0.0": "consumeBrowserPlus"
+      }
+    },
+
+    "project-manager": {
+         "versions": {
+           "^2.2.1": "consumeProjectManager"
+         }
+       }
+
+  },
+  "keywords": [
+    "preview",
+    "preview-plus",
+    "coffee2js",
+    "jade",
+    "markdown",
+    "quickpreview"
+  ]
+}
