@@ -1,7 +1,7 @@
 {
   "name": "pp",
   "main": "./lib/pp",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "PP-PreviewPlus~framework for all previews",
   "repository": "https://github.com/skandasoft/pp",
   "license": "MIT",
@@ -17,10 +17,10 @@
     "atom-space-pen-views": ">=2.0.3",
     "node-uuid": ">=1.4.7"
   },
-  "providedServices":{
-    "pp":{
+  "providedServices": {
+    "pp": {
       "description": "Add Your Preview",
-      "versions":{
+      "versions": {
         "1.0.0": "provideAddPreview"
       }
     }
@@ -36,13 +36,11 @@
         ">=0.0.0": "consumeBrowserPlus"
       }
     },
-
     "project-manager": {
-         "versions": {
-           "^2.2.1": "consumeProjectManager"
-         }
-       }
-
+      "versions": {
+        "^2.2.1": "consumeProjectManager"
+      }
+    }
   },
   "keywords": [
     "preview",
