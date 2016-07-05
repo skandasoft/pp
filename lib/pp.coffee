@@ -48,15 +48,23 @@ module.exports =
       type: 'boolean'
       default: false
 
+  liveOff: ->
+        for editor in @editors
+          for key,ele of editor
+            editor[key].dispose()
+        @pp.setLive()
+
   activate: (state) ->
     # Events subscribed to in atom's system can be easily cleaned up with a CompositeDisposable
     @subscriptions = new CompositeDisposable
     @previews = []
-    @editors = []
+    @editors = {}
     @processes = []
     @defaults = {}
     requires = atom.config.get('pp.require')
     atom.commands.add 'atom-text-editor', 'pp:preview': => @compile()
+    atom.commands.add 'atom-text-editor', 'pp:liveOff': => @liveOff()
+    atom.commands.add 'atom-text-editor', 'pp:killAll': => @killProcesses()
     @addPreviews(requires,false)
 
     idx = null
@@ -73,76 +81,44 @@ module.exports =
 
     atom.workspace.onDidChangeActivePaneItem (activePane)=>
       return unless activePane
-      @previewStatus?.setCompilesTo activePane
+      @pp?.showStatusBar activePane
       subscribe?.dispose?()
       subscribe = activePane.onDidChangeGrammar?  (grammar)->
-        _this.previewStatus?.setCompilesTo activePane
+        _this.pp?._id = null
+        _this.pp?.showStatusBar activePane,true
 
     atom.workspace.onDidDestroyPaneItem (pane)=>
-      _.remove @editors,(ed)->
-                  return true if ed[pane.item.id]
-      # console.log @editors
+          if @editors
+            for key,ele of @editors[pane.item.id]
+              @editors[pane.item.id][key].live?.dispose?()
+              @editors[pane.item.id][key].hyperLive?.dispose?()
+            delete @editors[pane.item.id]
 
-
-  addPreviews: (requires,pkg=true)->
-    if pkg
-      if requires.deactivate
-        return
-      # pkage = _.find atom.packages.loadedPackages,(pkg)->
-      #   pkg.mainModulePath is module.id
-      # return unless pkage
-      # requires = [].push(requires) unless $.isArray(requires)
-      return unless requires['pkgName']
-      requires = [requires]
-    _ids = []
-    for req in requires
-      try
-        preview = if pkg then req else require req
-        fileTypes = preview['fileTypes'] or []
-        names = preview['names'] or []
-        scopeNames = preview['scopeNames'] or []
-        for key,obj of preview
-          continue if key in ['fileTypes', 'names', 'scopeNames','pkgName']
-          continue unless obj['exe']
-          obj.name = key unless obj.name
-          if pkg
-            obj.fname = "#{obj.name} (#{preview['pkgName']})"
-          else
-            obj.fname = "#{obj.name} (#{req})"
-          obj.fileTypes =  (obj['fileTypes'] or []).concat fileTypes
-          obj.names =  (obj['names'] or []).concat names
-          obj.scopeNames =  (obj['scopeNames'] or []).concat scopeNames
-          obj._id = uuid.v1()
-          _ids.push obj._id
-          @previews.push obj
-        _ids
-      catch e
-        console.log 'check the requires setting in PP package',e
-        atom.notifications.addInfo 'check the require settings in PP Package'+e
-
-
-  setLiveListener: (editor,clicks)->
-      editorStatus = @getEditorStatus(editor)
-
+  setLiveListener: (editor,_id,clicks)->
+      status = @getStatus(editor,_id)
       if clicks is 1
-        if editorStatus.live?.disposalAction or editorStatus.hyper?.disposalAction
-          editorStatus.live?.dispose()
-          editorStatus.hyper?.dispose()
+        if status.live?.disposalAction or status.hyperLive?.disposalAction
+          status.live?.dispose?()
+          status.hyperLive?.dispose?()
         else
-          editorStatus.live = editor.onDidSave @listen
-        @compile(editor)
+          status.live = editor.onDidSave  =>
+                @compile(editor,_id)
+        @editors[editor.id][_id] = status
+        @compile(editor,_id)
       else
         editor.buffer.stoppedChangingDelay = atom.config.get('pp.liveMilliseconds')
-        editorStatus.live?.dispose()
-        editorStatus.hyper = editor.onDidStopChanging @listen
-        @compile(editor)
+        status.live?.dispose?()
+        status.hyperLive = editor.onDidStopChanging =>
+              @compile(editor,_id)
+        @editors[editor.id][_id] = status
+        @compile(editor,_id)
 
   consumeStatusBar: (statusBar)->
     @statusBar = statusBar
     {PPStatusView} = require './pp-status-view'
     editor = atom.workspace.getActiveTextEditor()
-    @previewStatus = new PPStatusView(@,editor)
-    @previewStatus.setCompilesTo editor
+    @pp = new PPStatusView(@,editor)
+    @pp.showStatusBar editor
 
   getPreviews: (editor,ext=@getExt(editor))->
     grammar = editor.getGrammar()
@@ -157,82 +133,86 @@ module.exports =
 
               for fileType in preview.fileTypes
                 return true if fileType in grammar.fileTypes
-    # throw new PPError 'alert','Set the Grammar for the Editor' unless previews.length
+    throw new PPError 'alert','Set the Grammar for the Editor' unless previews.length
     previews
+
   getExt: (editor)->
     editorPath = editor.getPath()
     ext = path.extname(editorPath)[1...]
 
-  getEditorStatus: (editor,cache=true)->
-    try
-      status = {}
-      editorStatus = _.find @editors,(ed)->
-                      return true if ed[editor.id]
-      status = editorStatus[editor.id] if editorStatus
-      unless cache and editorStatus
-        ext = @getExt(editor)
-        previews = @getPreviews editor,ext
-        return {} if previews.length is 0
-        unless editorStatus
-          # preview = @getDefaultPreview(previews,ext)
-          preview = @getDefault previews,ext
-          status = { compileTo: preview.name }
-          status._id = preview._id
-          status.enum =  previews.length > 1
-          obj = {}
-          obj[editor.id] = status
-          @editors.push obj
-        else
-          preview = _.find previews, {_id:status._id}
-
-      if cache
-        status
+  fillStatus: (preview)->
+    status = {}
+    status._id = preview._id
+    status.name = preview.name
+    if preview.viewClass
+      if preview.viewArgs
+        preview.vw = new preview.viewClass(preview.viewArgs)
       else
-        {edStatus: status,previews:previews,ext:ext,preview:preview}
+        preview.vw= new preview.viewClass
+      status.vw = preview.vw
+    status
 
-    catch e
-      console.log e,"No Preview-Plus Previews Available"
+  getEnum: (editor)->
+    ext = @getExt(editor)
+    @defaults[ext].enum
 
-  getDefault: (previews,ext)->
-    debugger
-    return if previews?.length is 0
-    unless @defaults[ext]?
-      preview = _.find previews,@defaults[ext]
-      @createPreview(preview)
-    else
-      @default[ext] = previews[0].name
+  getStatus: (editor,_id)->
+    _id = _id or @editors[editor.id]?.current
+    status =  @editors[editor.id]?[_id] if _id
+    return status if status
+    if _id
+      preview = _.find @previews, (preview)->
+                    preview._id is _id
+      status = @fillStatus(preview)
+      status.enum = @getEnum(editor)
+      @setCurrentStatus(editor,status)
+      return status
+    @getDefaultStatus(editor)
 
-  createPreview: (preview)->
-      if preview.viewClass
-        if preview.viewArgs
-          preview.vw = new preview.viewClass(preview.viewArgs)
-        else
-          preview.vw = new preview.viewClass
+  setCurrentStatus: (editor,preview)->
+    if @editors[editor.id]?[preview._id]
+      return @editors[editor.id]?[preview._id]
+    status = jQuery.extend {}, preview
+    unless @editors[editor.id]
+      @editors[editor.id] = {}
+    @editors[editor.id][status._id] = status
+    @editors[editor.id].current = status._id
+    return status
+
+  getDefaultStatus: (editor,fresh)->
+    ext = @getExt(editor) or ''
+    if fresh or not @defaults[ext]
+      previews = @getPreviews editor,ext
+      throw new PPError 'alert','No Previews Available' if previews.length is 0
+      @defaults[ext] = @fillStatus previews[0],editor
+      @defaults[ext].enum = true if previews.length > 1
+    @setCurrentStatus(editor,@defaults[ext])
+
+  compilePath: (path,_id)->
+      panes = atom.workspace.getPaneItems()
+      ed = atom.workspace.paneForURI(path)?.getItems()?.find (pane)-> pane.getURI() is path
+      # ed  = panes.find (pane)->
+      #         return if pane.constructor.name is 'HTMLEditor'
+      #         pane.getURI() is path or "file:///"+pane.getURI() is path
+      if ed
+        @compile(ed,_id)
       else
-        preview.name
+        if path.startsWith('file:///')
+          path = path.split('file:///')[1]
+        atom.workspace.open(path)
+                      .then (vw)=>
+                            @compile(vw,_id)
 
-  getDefaultPreview: (previews,ext)->
-    debugger
-    return if previews?.length is 0
-    unless @defaults[ext]?
-      preview = _.find previews,@defaults[ext]
-    else
-      previews[0]
+  compile: (editor = atom.workspace.getActiveTextEditor(),_id)->
 
-  compile: (editor = atom.workspace.getActiveTextEditor(),preview )->
-    edStatus = @getEditorStatus(editor)
-    previews = @getPreviews(editor)
-    if preview
-      edStatus._id = preview._id
-    else
-      preview = _.find previews,(preview)->
-        return true if preview._id == edStatus._id
+    status = @getStatus(editor,_id)
+    @editors[editor.id].current = status._id
     {text,fpath,quickPreview} = @getText editor
-
+    preview = _.find @previews,{_id:status._id}
     settings = @project?.props?.settings?[preview.fname] or {}
     options = jQuery.extend {},settings['pp-options'] ,@getContent('options',text)
     data = jQuery.extend {},settings['pp-data'],@getContent('data',text)
-    @previewPane(preview,text,options,data,fpath,quickPreview,edStatus.hyper?.disposalAction,editor)
+    @previewPane(preview,text,options,data,fpath,quickPreview,status.hyperLive?.disposalAction,editor,_id)
 
   killProcesses: ->
     for proc in @processes
@@ -261,7 +241,7 @@ module.exports =
 
       # process to be removed once the process get complete
       delete @processes[preview._id]
-      compileTo = @previewStatus.compileTo
+      compileTo = @pp.compileTo
       compileTo.text compileTo.text().replace('(kill)','')
     args = [workerFile,fpath]
     options = {
@@ -269,21 +249,21 @@ module.exports =
     }
     command = 'node'
     @startTime = new Date()
-    coffee = require('coffee-script');
+    coffee = require('coffee-script')
     js = coffee.compile(code)
     console.log js
-    vm = require('vm');
+    vm = require('vm')
     context = vm.createContext({
         require: require,
         # register:require('coffee-script/register'),
-        console: console    });
-    vm.runInContext(js,context, fpath);
+        console: console })
+    vm.runInContext(js,context, fpath)
 
     # child = new BufferedProcess {command, args, options, stdout, stderr, exit}
     # # keep track of all process
     # @processes[preview._id] = child
     # # # update the status bar text add (kill)
-    # @previewStatus.compileTo.text   @previewStatus.compileTo.text() + "(kill)"
+    # @pp.compileTo.text   @pp.compileTo.text() + "(kill)"
     # child.process.stdin.write(code)
     # child.process.stdin.end()
 
@@ -334,17 +314,17 @@ module.exports =
 
       # process to be removed once the process get complete
       delete @processes[preview._id]
-      compileTo = @previewStatus.compileTo
+      compileTo = @pp.compileTo
       compileTo.text compileTo.text().replace('(kill)','')
 
     child = new BufferedProcess {command, args, options, stdout, stderr, exit}
     # update the status bar text add (kill)
     @startTime = new Date()
-    @previewStatus.compileTo.text   @previewStatus.compileTo.text() + "(kill)"
+    @pp.compileTo.text   @pp.compileTo.text() + "(kill)"
     # keep track of all process
     @processes[preview._id] = child
 
-  previewPane: (preview,text,options,data,fpath,quickPreview,live,editor)->
+  previewPane: (preview,text,options,data,fpath,quickPreview,live,editor,_id)->
     # grammar = if not err then preview.ext  else syntax = editor.getGrammar()
     syntax = atom.grammars.selectGrammar(preview.ext)
     view = undefined
@@ -354,43 +334,37 @@ module.exports =
         unless result
           view?.destroy()
           return true
-        if result.text
-          @previewText(editor,view,result.text)
+        formatResult = (res)=>
+          if res.text or typeof res is 'string' or res.code
+            @previewText(editor,view,res.text  or res.code or res)
+          if res.command
+            @runCommand res.command, res.args ,res.options or options,preview,view
+          if res.program
+            @runProgram res.program,text,fpath, res.args,res.options or options, preview,view
+
+          if res.html or res.htmlURL
+            view?.destroy()
+            uri = res.htmlURL or "browser-plus~#{preview.name}~#{preview._id}://#{editor.getURI()}"
+            pane = atom.workspace.paneForURI(uri)
+            if pane
+              htmlEditor = pane.getItems()?.find (itm)-> itm.getURI() is uri
+              htmlEditor.setText(res.html) if res.html
+              pane = atom.workspace.paneForItem htmlEditor
+              pane.setActiveItem(htmlEditor)
+              # htmlEditor.refresh()
+            else
+              atom.workspace.open uri,{src:res.html,split:@getPosition(editor),orgURI:fpath,_id:_id}
+
         if result.promise
-          promise.done (text)=>
-            @previewText(editor,view,text)
-          promise.fail (text)->
+          result.done (res)=>
+            formatResult(res)
+          result.fail (text)->
             e = new Error()
             e.name = 'console'
             e.message = text
             throw e
-        if result.command
-          @runCommand result.command, result.args ,result.options or options,preview,view
-        if result.program
-          @runProgram result.program,text,fpath, result.args,result.options or options, preview,view
-
-        if result.html
-          view?.destroy()
-          uri = "browser-plus://preview~#{editor.getURI()}.htmlp"
-          pane = atom.workspace.paneForURI(uri)
-          if pane
-            htmlEditor = pane.activeItem
-            htmlEditor.setText(result.html)
-          else
-            @bp.open "#{editor.getURI()}.htmlp",result.html,@getPosition editor
-
-        if result.htmlURL
-          view?.destroy()
-          uri = "#{editor.getURI()}.htmlp"
-          pane = atom.workspace.paneForURI(uri)
-          if pane
-            htmlEditor = pane.activeItem
-            htmlEditor.refresh()
-          else
-            @bp.open uri,null,@getPosition(editor),result.htmlURL
-        activePane = atom.workspace.paneForItem(editor)
-        activePane.activate() if atom.config.get('pp.cursorFocusBack')
-
+        else
+          formatResult(result)
       #
       catch e
         console.log e.message
@@ -402,10 +376,12 @@ module.exports =
             error = text.split('\n')[0...first_line].join('\n')
           error += '\n'+e.toString().split('\n')[1..-1].join('\n')+'\n'+e.message
           @previewText editor,view,error,true
-    if preview.noPreview
+
+    if preview.noPreview or preview.browserPlus
       compile()
     else
-      if editor.getSelectedText()
+
+      if quickPreview
         unless @qView
           @qView = new QuickView(title,text,syntax)
           atom.workspace.addBottomPanel item: @qView
@@ -413,33 +389,30 @@ module.exports =
           @qView.editor.setText('')
         view = @qView.showPanel(text,syntax)
         view.setGrammar syntax if syntax
-        # ed = @qView.find('.editor')[0].getModel()
-        # ed.setGrammar syntax if syntax
         compile()
       else
         split = @getPosition editor
-        # ext = if err then "#{preview.ext}.err" else preview.ext
+        title = editor.getTitle()
         if preview.ext
-          title = "preview~#{editor.getTitle()}.#{preview.ext}"
-        else
-          title = "preview~#{editor.getTitle()}"
           title = title.substr(0, title.lastIndexOf('.'))
+          title = "#{title}.#{preview.ext}~pp~#{preview.name}~#{preview._id}.#{preview.ext}"
+        else
+          title = "#{title}.~pp~#{preview.name}~#{preview._id}"
+
         atom.workspace.open title,
                           searchAllPanes:true
                           split: split
                           # src: text
                 .then (vw)=>
                       view = vw
+                      vw.shouldPromptToSave = ->
+                        atom.config.get('pp.promptForSave')
+
                       view.setText('')
                       view.disposables.add editor.onDidDestroy =>
                         view.destroy()
-                      # view.setText(text)
                       view.setGrammar syntax if syntax
-                      view.moveToTop()
-                      # activePane = atom.workspace.paneForItem(editor)
-                      # activePane.activate() if atom.config.get('pp.cursorFocusBack')
-                      viewStatus = @getEditorStatus(view)
-                      viewStatus.orgURI = editor.getURI()
+                      # view.moveToTop()
                       compile()
 
   previewText: (editor,view,text,err)->
@@ -498,6 +471,7 @@ module.exports =
         _ids
       catch e
         console.log 'check the requires setting in PP package',e
+        atom.notifications.addInfo 'check the require settings in PP Package'+e
 
   getContent: (tag,text)->
       regex = new RegExp("<pp-#{tag}>([\\s\\S]*?)</pp-#{tag}>")
@@ -506,21 +480,15 @@ module.exports =
         data = loophole.allowUnsafeEval ->
             eval "(#{match[1]})"
 
-
-  getTextTag: (tag,text)->
-      regex = new RegExp("<#{tag}>([\\s\\S]*?)</#{tag}>")
-      match = text.match(regex)
-      match[1].trim() if match?
-
   deactivate: ->
-    @previewStatus.destroy()
+    @pp.destroy()
     @subscriptions.dispose()
 
   serialize: ->
     viewState = []
     for view in @views
       viewState.push if view.serialize?()
-    previewState: @previewStatus.serialize()
+    previewState: @pp.serialize()
     viewState : viewState
     projectState: @project
 
@@ -547,3 +515,29 @@ module.exports =
     text = selected or editor.getText()
 
     if text.length is 0 or !text.trim() then throw new PPError 'alert','No Code to Compile' else { text, fpath, quickPreview}
+
+  makeHTML: (obj = {})->
+    cssURL = ''
+    jsURL = ''
+    obj.html or= ''
+    obj.js or= ''
+    obj.css or= ''
+    for css in ( obj.cssURL or [] )
+        cssURL = cssURL+ "<link rel='stylesheet' href='#{css}'>"
+
+    for js in ( obj.jsURL or [] )
+        jsURL = jsURL+ "<script src='#{js}''></script>"
+
+    """
+      <html>
+        <head>
+          #{obj.js}
+          #{jsURL}
+          #{obj.css}
+          #{cssURL}
+        </head>
+        <body>
+          #{obj.html}
+        </body>
+      </html>
+      """

@@ -10,6 +10,7 @@ offers the following features
 5. user defined requires to quickly get preview
 6. Run Options/Kill the process
 7. scroll sync
+8. super
 
 Comes default with the coffee to js preview implementation.
 

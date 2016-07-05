@@ -1,6 +1,7 @@
-require './lib/html'
-console.log 'low consume'
+###
+  <pp-options>
+      {bare: true}
+  </pp-options>
+###
 
-console.log 'slsss'
-
-console.log 'hssssssseo3'
+console.log 'hello'

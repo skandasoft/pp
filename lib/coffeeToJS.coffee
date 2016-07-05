@@ -2,8 +2,9 @@
 coffee = require 'coffee-script'
 jQuery = require 'jquery'
 loophole = require './eval'
-
+fs = require 'fs'
 module.exports =
+
   fileTypes: do ->
     types = atom.config.get('pp.coffee-types') or []
     types.concat ['coff','coffee'] #filetypes against which this compileTo Option will show
@@ -38,14 +39,24 @@ module.exports =
     quickPreview: true
     exe: (src,options,data,fileName,quickPreview,hyperLive,editor,view)->
       options.filename = fileName
-      text : coffee.compile src, options
+      if quickPreview or hyperLive or fileName.indexOf '~pp~coffee~'
+        text : coffee.compile src, options
+      else
+        dfd = new jQuery.Deferred()
+        fs.readFile fileName,'utf-8',(err,data)=>
+          if err
+            console.log dfd.fail err
+            text : coffee.compile src, options
+          else
+            dfd.resolve text: coffee.compile data, options
+        dfd.promise()
 
   run:
     hyperLive: true
     quickPreview: true
     exe: (src,options={},data,fileName,quickPreview,hyperLive,editor,view)->
 
-      if quickPreview or hyperLive
+      if quickPreview or hyperLive or fileName.indexOf('~pp~')
         args = atom.config.get('pp.coffee-cli-args').concat(src)
         program: 'runCoffee.js'
         args: args
@@ -55,3 +66,40 @@ module.exports =
         # process: loophole.runCommand 'coffee', [args].concat(fileName),options,view
         command: 'coffee'
         args: args
+
+  html:
+    hyperLive: true
+    quickPreview: true
+    ext: 'html'
+    exe: (src,options={},data,fileName,quickPreview,hyperLive,editor,view)->
+      options.filename = fileName
+      coffeeSrc =  src
+      unless (quickPreview or hyperLive or fileName.startsWith('browserplus~'))
+        try
+          coffeeSrc = fs.readFileSync(fileName,'utf-8').toString()
+        catch e
+
+      js = coffee.compile coffeeSrc, options
+      js = "<script type='text/javascript'>#{js}</script>\n"
+      atom.packages.getActivePackage('pp').mainModule.makeHTML
+          js: js
+          jsURL: data.js
+          cssURL: data.css
+
+
+  browser:
+    hyperLive: true
+    quickPreview: true
+    browserPlus: true
+    exe: (src,options={},data,fileName,quickPreview,hyperLive,editor,view)=>
+      coffeeSrc =  src
+      unless (quickPreview or hyperLive or fileName.startsWith('browserplus~'))
+        try
+          coffeeSrc = fs.readFileSync(fileName,'utf-8').toString()
+        catch e
+      js = coffee.compile coffeeSrc, options
+      js = "<script type='text/javascript'>#{js}</script>"
+      html: atom.packages.getActivePackage('pp').mainModule.makeHTML
+              js: js
+              jsURL: data.js
+              cssURL: data.css

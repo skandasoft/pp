@@ -14,55 +14,51 @@ class PPStatusView extends View
     @clicks = 0
 
   setLive: (live)->
-    if @edStatus.live?.disposalAction
+    edStatus = @model.editors[@editor.id][@_id]
+    if edStatus.live?.disposalAction
       @live.removeClass('off').removeClass('hyper').addClass('on')
-    else if @edStatus.hyper?.disposalAction
+    else if edStatus.hyperLive?.disposalAction
       @live.removeClass('off').removeClass('on').addClass('hyper')
     else
       @live.removeClass('on').removeClass('hyper').addClass('off')
 
-  setCompilesTo: (@editor)->
+  showStatusBar: (@editor,fresh)->
     return unless @editor
     @hide()
+    delete @_id if fresh
     try
-      grammar = @editor.getGrammar?()
-      return false unless grammar
-      cache = @editor.id is @id
-      @id = @editor.id
-
-      @edStatus = @model.getEditorStatus(@editor,cache)
-      return if $.isEmptyObject @edStatus
-      unless cache
-        @previews = @edStatus.previews
-        @preview = @edStatus.preview
-        @ext = @edStatus.ext
-        @edStatus = @edStatus.edStatus
-      return unless @edStatus.compileTo
-      if @preview.viewClass
-        @compileTo.empty().append @preview.vw
+      status = @model.getStatus(@editor)
+      @_id = status._id
+      if status.vw
+        # preview = _.find @model.previews,(preview)->
+        #               preview._id is status._id
+        # preview.statusView = status.vw.clone(true) unless preview.statusView
+        @compileTo.empty().append status.vw
       else
-        @compileTo.empty().text @edStatus.compileTo
-      # else
-      #   @compileTo.empty().append compileToView
+        @compileTo.empty().text status.name
+
       @show()
       @setLive()
-      if @edStatus.enum
+      if status.enum
         @enums.show()
       else
         @enums.hide()
     catch e
-      console.log 'Not a Preview-Plus Editor',e
+      # console.log 'Not a Preview-Plus Editor',e.message,e.stack
 
   compile: ->
-    @model.compile(@editor,@preview)
+    @model.compile(@editor,@_id)
 
   setToggleLive: (click)->
-    @model.setLiveListener(@editor,click)
+    @model.setLiveListener(@editor,@_id,click)
     @setLive()
 
   toggleLive: (evt)->
-    if @model.processes[@preview._id]
-      @model.processes[@preview._id].kill()
+    edStatus = @model.editors[@editor.id][@_id]
+    preview = _.find @model.previews, (preview)->
+      preview._id is edStatus._id
+    if @model.processes[edStatus._id]?[@_id]
+      @model.processes[edStatus._id][@_id]?.kill()
       @compileTo.replace('(kill)','')
       return true
     @clicks++
@@ -73,7 +69,7 @@ class PPStatusView extends View
       ,300
     else
       @clicks = 0
-      if ( typeof @preview.hyperLive is 'boolean' and @preview.hyperLive ) or (typeof @preview.hyperLive is 'function' and @preview.hyperLive())
+      if ( typeof preview.hyperLive is 'boolean' and preview.hyperLive ) or (typeof preview.hyperLive is 'function' and preview.hyperLive())
         @setToggleLive(2)
       else
         atom.notifications.addInfo('HyperLive Not available')
@@ -81,17 +77,29 @@ class PPStatusView extends View
       clearTimeout @timer
 
   previewList: ->
-    new CompilerView @previews,@
-
-  updateCompileTo: (item)->
-    @preview = item
-    @edStatus.compileTo = item.name
-    if item.vw
-      item.statusView = item.vw.clone(true) unless item.statusView
-      @compileTo.empty().append item.statusView
+    previews = @model.getPreviews(@editor)
+    defaults = @model.getDefaultStatus(@editor)
+    if defaults
+      for preview in previews
+        if preview._id is defaults._id
+          preview.default = true
+        else
+          preview.default = false
     else
-      @compileTo.empty().text @edStatus.compileTo
-    @model.compile(@editor,@preview)
+      previews[0].default = true
+
+    new CompilerView previews,@
+
+  updateStatusBar: (item)->
+    status = @model.getStatus(@editor,item._id)
+    if status.vw
+      # item.statusView = item.vw.clone(true) unless item.statusView
+      @compileTo.empty().append status.vw
+    else
+      @compileTo.empty().text status.name
+    @_id = item._id
+    @setLive()
+    @model.compile(@editor,item._id)
 
   show: ->
     super
@@ -116,10 +124,11 @@ class CompilerView extends SelectListView
   viewForItem: (item)->
     if item.viewClass
       li = $("<li><span class='pp-space'></span></li>")
-      if item.viewArgs
-        item.vw = new item.viewClass(item.viewArgs)
-      else
-        item.vw = new item.viewClass
+      unless item.vw
+        if item.viewArgs
+          item.vw = new item.viewClass(item.viewArgs)
+        else
+          item.vw = new item.viewClass
       li.append item.vw
       item.vw.selectList = @
     else
@@ -132,8 +141,10 @@ class CompilerView extends SelectListView
     fn = (e)=>
       $(`this `).closest('ol').find('span').removeClass('on')
       $(`this `).addClass('on')
-      for preview in @statusView.previews
-        preview.default = false
+      model = _this.statusView.model
+      ext = model.getExt(_this.statusView.editor)
+      item.enum = true
+      model.defaults[ext] = item
       item.default = true
       e.stopPropagation()
       return false
@@ -148,7 +159,7 @@ class CompilerView extends SelectListView
     #   $li.data('selectList',@)
       # item
   confirmed: (item)->
-    @statusView.updateCompileTo(item)
+    @statusView.updateStatusBar(item)
     # if item.vw
     #   for i in [1..10000]
     #     console.log i

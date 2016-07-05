@@ -1,3 +1,30 @@
+check if browser plus / options?? as a string
+js - run
+jade - with data
+react - pick js/css - html
+facebook reactsjsx
+
+quick scss/sass/less/stylus - APM
+typescript
+handlebars
+cjsx
+ruby/erb
+slim/haml... - APM
+
+save defaults
+riotjs
+
+
+kill all the process/defaults on change of grammar
+run/kill --> live updating result/kill all process
+
+mark down(in flavors) - APM
+jade as APM implementation
+js/script/css/resources
+history
+handle bars/others
+
+
 get the previews with name..
 each editor maintained in the browser-plus has an editor status...
 if the file type changes ...change the editor status
@@ -5,6 +32,7 @@ editor status has the live status../enum/tool bar (name/view )/ has the preview 
 everytime call the getList of previews..when clicked on enum...on selection update the editor status with
 preview object and call the compile to/run/method...
 check if it is the default or update default...
+
 
 on compile -->what all things flows..
 what is the file name starts with..../ends with
@@ -26,21 +54,12 @@ check if hyper live possible/quick preview
 should prompt for save/ esc key
 
 html implmentation - done/ unformatted
-mark down(in flavors) - APM
 
 * addition / live preview html/output status bar template/save the last guy....
 make open-in-browsers as PP with URL support (compileView)
 file implementation as NPM
-jade as APM implementation
-facebook reactsjsx
-js
-save defaults
-fix for navigate
-slim/haml... - APM
-handle bars/others
-quick scss/sass/less/stylus - APM
 browser fix for documentation
-run/kill --> live updating result/kill all process
+
 
 scroll sync..
 quick pdf ?
