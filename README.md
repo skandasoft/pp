@@ -1,7 +1,8 @@
 # pp package
 
 Basic framework for preview packages
-offers the following features
+offers the following features:
+
 0. Easy Plugin options for previews with all necessary parameter passed for executing the previews
 1. dropdown for the list of applicable preview for each editor based on file types/alias/patterns
 2. Live - Preview On Save
