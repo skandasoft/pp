@@ -14,4 +14,4 @@ offers the following features
 
 Comes default with the coffee to js preview implementation.
 
-![pp(preview-plus)](https://raw.github.com/skandasoft/pp/master/PP.png)]
+![pp(preview-plus)](https://raw.github.com/skandasoft/pp/master/PP.png)
